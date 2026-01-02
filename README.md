@@ -123,6 +123,27 @@ Enable debug output for troubleshooting:
 nmap -p 80,443 --script mcp-discovery -d <target>
 ```
 
+### Brute Force Authentication
+
+When encountering authenticated MCP endpoints (like MCP Gateway), enable brute force to attempt common tokens:
+
+```bash
+nmap -p 8811 --script mcp-discovery --script-args mcp-discovery.bruteforce=true <target>
+```
+
+Use custom password database:
+
+```bash
+nmap -p 8811 --script mcp-discovery --script-args mcp-discovery.bruteforce=true,mcp-discovery.passdb=/path/to/tokens.txt <target>
+```
+
+The script automatically tries:
+- Common development tokens (`dev`, `test`, `admin`)
+- Default MCP Gateway tokens (`mcp`, `mcpgateway`, `gateway`)
+- Common weak passwords (`password`, `changeme`, `secret`)
+- Empty/null tokens
+- Custom tokens from provided database
+
 ## Output Examples
 
 ### Successful MCP Discovery
@@ -132,17 +153,31 @@ PORT     STATE SERVICE
 3000/tcp open  ppp
 | mcp-discovery:
 |   endpoints:
-|     url: http://192.168.1.100:3000/mcp
-|     protocol: HTTP
-|     methods:
-|       tools/list: 3 tools available
-|       resources/list: 5 resources available
-|       prompts/list: 2 prompts available
-|       initialize: Initialized successfully
-|     server_info:
-|       name: example-mcp-server
-|       version: 1.0.0
-|_      protocolVersion: 2024-11-05
+|     [1]
+|       url: http://192.168.1.100:3000/mcp
+|       protocol: HTTP
+|       methods:
+|         tools/list: 3 tools available
+|         resources/list: 5 resources available
+|         prompts/list: 2 prompts available
+|         initialize: Initialized successfully
+|       server_info:
+|         name: example-mcp-server
+|         version: 1.0.0
+|         protocolVersion: 2024-11-05
+|       tools:
+|         read_file: Read contents of a file
+|         write_file: Write content to a file
+|         execute_command: Execute a shell command
+|       resources:
+|         file:///home/user/docs: Project documentation (text/markdown)
+|         file:///home/user/data: Data directory (application/x-directory)
+|         config://app: Application configuration
+|         database://main: Main database connection
+|         cache://redis: Redis cache instance
+|       prompts:
+|         code_review: Review code for best practices
+|_        bug_analysis: Analyze bugs and suggest fixes
 ```
 
 ### Multiple Endpoints Found
@@ -162,39 +197,144 @@ PORT     STATE SERVICE
 |         name: filesystem-mcp
 |         version: 2.1.0
 |         protocolVersion: 2024-11-05
+|       tools:
+|         list_directory: List files in a directory
+|         read_file: Read a file from the filesystem
+|         write_file: Write data to a file
+|         delete_file: Delete a file
+|         create_directory: Create a new directory
+|         move_file: Move or rename a file
+|         copy_file: Copy a file
+|         get_file_info: Get metadata about a file
+|         search_files: Search for files matching a pattern
+|         watch_directory: Monitor a directory for changes
+|       resources:
+|         file:///var/data: System data directory
+|         file:///etc/config: Configuration files
+|         file:///var/log: Log files
 |     [2]
 |       url: http://192.168.1.100:8080/api/mcp
 |       protocol: HTTP
 |       methods:
 |         tools/list: 5 tools available
-|_        initialize: Initialized successfully
+|         initialize: Initialized successfully
+|       tools:
+|         api_call: Make an API call
+|         parse_json: Parse JSON data
+|         format_data: Format data for output
+|         validate_input: Validate user input
+|_        transform_data: Transform data between formats
 ```
 
 ### No MCP Endpoints Found
 
 If no MCP endpoints are found on a port, the script will not produce output for that port.
 
+### Successful Brute Force Authentication
+
+```
+PORT     STATE SERVICE
+8811/tcp open  unknown
+| mcp-discovery:
+|   endpoints:
+|     [1]
+|       url: http://192.168.1.100:8811/
+|       protocol: HTTP
+|       methods:
+|         initialize: Authentication bypassed (token: dev)
+|         tools/list: 5 tools available
+|         resources/list: 2 resources available
+|       server_info:
+|         name: MCP Gateway (authenticated)
+|         cracked_token: dev
+|       tools:
+|         shell_exec: Execute shell commands
+|         file_read: Read files from filesystem
+|         network_scan: Scan network for services
+|         db_query: Execute database queries
+|         api_proxy: Proxy API requests
+|       resources:
+|         file:///etc/config: Configuration files
+|_        database://prod: Production database
+```
+
 ## Script Arguments
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `mcp-discovery.paths` | Comma-separated list of paths to probe | `/,/mcp,/mcp/stream,/api/mcp,/v1/mcp,/rpc,/jsonrpc,/sse,/messages` |
+| `mcp-discovery.paths` | Comma-separated list of paths to probe | 27 comprehensive paths (see below) |
 | `mcp-discovery.timeout` | Timeout for HTTP requests in milliseconds | `5000` |
 | `mcp-discovery.useragent` | User-Agent header to use | `Nmap NSE` |
+| `mcp-discovery.bruteforce` | Enable brute force authentication attempts | `false` |
+| `mcp-discovery.passdb` | Path to password database for brute force | Nmap default |
+| `mcp-discovery.userdb` | Path to username database for brute force | Nmap default |
 
-## Common MCP Paths
+## Comprehensive MCP Path Coverage
 
-The script automatically probes these common paths:
+The script automatically probes **27 common MCP endpoint paths** based on research of popular MCP servers, gateways, and frameworks (2025):
 
-- `/` - Root path
-- `/mcp` - Standard MCP path
-- `/mcp/stream` - MCP streaming endpoint
+### Standard MCP Paths
+- `/` - Root path (common for simple servers)
+- `/mcp` - Standard MCP endpoint (Streamable HTTP)
+
+### Legacy SSE Transport (pre-2025)
+- `/sse` - Default SSE connection endpoint
+- `/messages` - Default message POST endpoint for SSE
+- `/mcp/stream` - Alternative SSE streaming path
+
+### API Versioned Paths
 - `/api/mcp` - API-prefixed MCP path
 - `/v1/mcp` - Versioned MCP path
-- `/rpc` - Generic RPC path
-- `/jsonrpc` - JSON-RPC path
-- `/sse` - Server-Sent Events path
-- `/messages` - Messages endpoint
+- `/api/v1/mcp` - API + version prefix
+- `/v2/mcp` - Version 2 path
+
+### Gateway and Proxy Paths
+- `/mcpgw/mcp` - MCP Gateway proxy path (Microsoft/Docker)
+- `/gateway/mcp` - Alternative gateway path
+- `/proxy/mcp` - Proxy server path
+- `/adapters` - MCP Gateway adapter endpoint
+- `/tools` - Direct tools API
+
+### Generic RPC Paths
+- `/rpc` - Generic RPC endpoint
+- `/jsonrpc` - JSON-RPC specific endpoint
+- `/json-rpc` - Alternative JSON-RPC path
+
+### Framework-Specific Paths
+- `/message` - Message endpoint variant
+- `/endpoint` - Generic endpoint path
+- `/api` - Simple API path
+- `/server` - Server endpoint path
+
+### Transport-Specific Paths
+- `/http` - HTTP transport explicit path
+- `/stream` - Generic streaming path
+- `/ws` - WebSocket path (future support)
+
+## Popular MCP Servers Detected
+
+This script can detect MCP endpoints from popular servers and frameworks:
+
+### Official Anthropic Servers
+- **@modelcontextprotocol/server-filesystem** - Local file operations
+- **@modelcontextprotocol/server-github** - GitHub repository management
+- **@modelcontextprotocol/server-puppeteer** - Browser automation
+- **@modelcontextprotocol/server-slack** - Slack workspace integration
+- **@modelcontextprotocol/server-postgres** - PostgreSQL database access
+- **@modelcontextprotocol/server-brave-search** - Brave Search API
+
+### Enterprise Gateways
+- **Microsoft MCP Gateway** - Kubernetes-based reverse proxy
+- **Docker MCP Gateway** - Container-based MCP routing
+- **IBM ContextForge** - Enterprise MCP gateway
+- **Traefik Hub MCP Gateway** - API gateway integration
+- **LiteLLM MCP** - Multi-model MCP integration
+
+### Community Servers
+- **Memory servers** - Context persistence
+- **SQLite servers** - Local database operations
+- **Git servers** - Version control integration
+- **Google Drive servers** - Cloud storage access
 
 ## Integration with Nmap
 
@@ -242,10 +382,24 @@ nmap -p 80,443 --script http-enum,mcp-discovery <target>
 
 ## Security Considerations
 
-- This script performs **safe, read-only operations**
+### Read-Only Operations
+- This script performs **safe, read-only operations** by default
 - It sends standard JSON-RPC 2.0 requests that do not modify server state
 - The script only calls MCP "list" methods and "initialize" which are non-destructive
-- Use responsibly and only scan networks you have permission to test
+
+### Brute Force Feature
+- **Brute force is disabled by default** and must be explicitly enabled
+- When enabled, the script attempts common/default tokens before trying custom wordlists
+- Brute force attempts include small delays (50ms) to avoid overwhelming servers
+- Successfully cracked tokens are displayed in the output
+- **IMPORTANT**: Only use brute force on systems you have explicit authorization to test
+- Unauthorized brute force attempts may be illegal and could trigger security alerts
+
+### Responsible Use
+- **Only scan networks and systems you have permission to test**
+- Respect rate limits and avoid aggressive scanning
+- Be aware that some MCP Gateways may log failed authentication attempts
+- Consider legal and ethical implications before enabling brute force
 
 ## Troubleshooting
 
