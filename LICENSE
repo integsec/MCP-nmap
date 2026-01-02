@@ -1,0 +1,115 @@
+MCP Discovery - Nmap NSE Script for Model Context Protocol Endpoint Detection
+Copyright (C) 2025 IntegSec
+
+================================================================================
+LICENSE TERMS
+================================================================================
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+================================================================================
+CLARIFICATION AND SPECIAL EXCEPTION FOR NMAP DISTRIBUTION
+================================================================================
+
+This software is licensed under GPL v3 or later to retain maximum rights
+for IntegSec while ensuring compatibility with open source requirements.
+
+SPECIAL EXCEPTION FOR NMAP:
+When distributed as part of the official Nmap distribution or the Nmap
+Scripting Engine library, this script may also be used under:
+  - The Nmap Public Source License (NPSL), OR
+  - The Nmap license as specified at https://nmap.org/book/man-legal.html
+
+This exception allows the script to be distributed with Nmap while
+maintaining GPL v3+ for standalone distribution.
+
+CLARIFICATION:
+- When distributed WITH Nmap: Either GPL v3+, NPSL, or Nmap license applies
+- When distributed SEPARATELY from Nmap: GPL v3 or later applies
+- IntegSec retains all copyright and intellectual property rights
+- This script may be freely used, modified, and distributed under the
+  terms specified above
+
+================================================================================
+WHY GPL v3+?
+================================================================================
+
+IntegSec has chosen GPL v3 or later because it:
+1. Ensures the software remains free and open source
+2. Requires derivatives to also be open source (copyleft protection)
+3. Retains IntegSec's copyright and attribution rights
+4. Allows commercial use with proper attribution
+5. Is compatible with Nmap's licensing requirements through the special exception
+6. Protects against patent claims
+7. Ensures source code availability for all users
+
+This maximizes IntegSec's rights while keeping the software publicly available
+and free for the community.
+
+================================================================================
+FULL GPL v3 LICENSE TEXT
+================================================================================
+
+The complete text of the GNU General Public License version 3 can be found at:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+Or contact:
+Free Software Foundation, Inc.
+51 Franklin Street, Fifth Floor
+Boston, MA 02110-1301 USA
+
+================================================================================
+NMAP LICENSE INFORMATION
+================================================================================
+
+For information about Nmap's license, please see:
+https://nmap.org/book/man-legal.html
+
+Nmap uses a custom license derived from GPLv2 with clarifications and
+additions. The NPSL (Nmap Public Source License) is available at:
+https://nmap.org/npsl/
+
+================================================================================
+CONTACT INFORMATION
+================================================================================
+
+IntegSec
+https://integsec.com
+
+For licensing questions, please contact IntegSec through their website.
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This script uses the following Nmap NSE libraries, which are part of Nmap:
+- http.lua - HTTP library (Nmap license)
+- json.lua - JSON parsing (Nmap license)
+- shortport.lua - Port rule library (Nmap license)
+- stdnse.lua - Standard NSE library (Nmap license)
+
+These libraries remain under their respective Nmap licenses.
+
+================================================================================
+DISCLAIMER
+================================================================================
+
+This script is provided for legitimate security testing, network administration,
+and authorized security research only. Users are responsible for ensuring they
+have proper authorization before scanning any networks or systems. Unauthorized
+network scanning may be illegal in your jurisdiction.
+
+The authors and IntegSec assume no liability for misuse of this software.
+
+================================================================================
