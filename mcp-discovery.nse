@@ -33,20 +33,27 @@ local table = require "table"
 local brute = require "brute"
 local creds = require "creds"
 local unpwdb = require "unpwdb"
+local comm = require "comm"
 
 description = [[
-Discovers Model Context Protocol (MCP) endpoints by probing HTTP and WebSocket services
+Discovers Model Context Protocol (MCP) endpoints by probing HTTP, SSE, and WebSocket services
 with JSON-RPC 2.0 requests. MCP is a protocol that allows AI assistants to access tools,
 resources, and prompts from external servers.
 
+The script supports all three MCP transport methods:
+- HTTP (Streamable HTTP) - The 2025 standard transport
+- SSE (Server-Sent Events) - Legacy transport (pre-2025)
+- WebSocket - For real-time bidirectional communication
+
 The script tests common MCP paths and checks for valid JSON-RPC 2.0 responses to the
 following MCP methods:
+- initialize (MCP initialization handshake - MUST be first)
 - tools/list (lists available tools)
 - resources/list (lists available resources)
 - prompts/list (lists available prompts)
-- initialize (MCP initialization handshake)
 
-This script can identify both HTTP-based and WebSocket-based MCP servers.
+When authentication is required, the script can optionally attempt brute force with
+common credentials (opt-in via --script-args mcp-discovery.bruteforce=true).
 
 Copyright (C) 2025 IntegSec - https://integsec.com
 ]]
@@ -64,11 +71,12 @@ Copyright (C) 2025 IntegSec - https://integsec.com
 -- |     [1]
 -- |       url: http://192.168.1.100:3000/mcp
 -- |       protocol: HTTP
+-- |       transport: HTTP
 -- |       methods:
+-- |         initialize: Initialized successfully
 -- |         tools/list: 3 tools available
 -- |         resources/list: 5 resources available
 -- |         prompts/list: 2 prompts available
--- |         initialize: Initialized successfully
 -- |       server_info:
 -- |         name: example-mcp-server
 -- |         version: 1.0.0
@@ -85,9 +93,16 @@ Copyright (C) 2025 IntegSec - https://integsec.com
 -- |         cache://redis: Redis cache instance
 -- |       prompts:
 -- |         code_review: Review code for best practices
--- |_        bug_analysis: Analyze bugs and suggest fixes
+-- |         bug_analysis: Analyze bugs and suggest fixes
+-- |     [2]
+-- |       url: http://192.168.1.100:3000/sse
+-- |       protocol: HTTP
+-- |       transport: SSE
+-- |       methods:
+-- |         initialize: Initialized successfully
+-- |_        tools/list: 1 tool available
 --
--- @args mcp-discovery.paths Comma-separated list of paths to probe (default: comprehensive list covering standard MCP, SSE legacy, gateways, and popular frameworks)
+-- @args mcp-discovery.paths Comma-separated list of ADDITIONAL paths to probe (default paths are always included)
 -- @args mcp-discovery.timeout Timeout for HTTP requests in milliseconds (default: 5000)
 -- @args mcp-discovery.useragent User-Agent header to use (default: Nmap NSE)
 -- @args mcp-discovery.bruteforce Enable brute force authentication attempts when encountering protected endpoints (default: false)
@@ -157,8 +172,70 @@ local function create_jsonrpc_request(method, params)
   })
 end
 
--- Send HTTP POST request with JSON-RPC payload
-local function send_mcp_request(host, port, path, method, params, bearer_token)
+-- Detect transport type based on path
+local function detect_transport_type(path)
+  -- SSE transport paths (legacy pre-2025)
+  if path:match("/sse") or path:match("/stream") or path:match("/messages") then
+    return "sse"
+  -- WebSocket paths
+  elseif path:match("/ws") or path:match("/websocket") then
+    return "websocket"
+  -- Default to HTTP (Streamable HTTP is the 2025 standard)
+  else
+    return "http"
+  end
+end
+
+-- Send SSE request (legacy transport)
+-- SSE uses GET for connection + POST to /messages for requests
+local function send_sse_request(host, port, path, method, params, bearer_token)
+  stdnse.debug1("Using SSE transport for %s", path)
+
+  -- SSE requires two endpoints:
+  -- 1. GET /sse to establish connection
+  -- 2. POST /messages to send requests
+
+  local message_path = path
+  if path:match("/sse$") then
+    -- If path is /sse, POST to /messages
+    message_path = path:gsub("/sse$", "/messages")
+  elseif not path:match("/messages$") then
+    -- If path doesn't end in /messages, try appending it
+    if path:match("/$") then
+      message_path = path .. "messages"
+    else
+      message_path = path .. "/messages"
+    end
+  end
+
+  local payload = create_jsonrpc_request(method, params)
+
+  local options = {
+    header = {
+      ["Content-Type"] = "application/json",
+      ["Accept"] = "text/event-stream"  -- SSE content type
+    },
+    content = payload
+  }
+
+  if bearer_token then
+    options.header["Authorization"] = "Bearer " .. bearer_token
+  end
+
+  stdnse.debug2("SSE POST to %s with payload: %s", message_path, payload)
+
+  -- Send POST to message endpoint
+  local response = http.post(host, port, message_path, options)
+
+  if response and response.body then
+    stdnse.debug2("SSE response body: %s", response.body:sub(1, 500))
+  end
+
+  return response
+end
+
+-- Send HTTP POST request with JSON-RPC payload (Streamable HTTP transport)
+local function send_http_request(host, port, path, method, params, bearer_token)
   local payload = create_jsonrpc_request(method, params)
 
   local options = {
@@ -174,7 +251,7 @@ local function send_mcp_request(host, port, path, method, params, bearer_token)
     options.header["Authorization"] = "Bearer " .. bearer_token
   end
 
-  stdnse.debug1("Probing %s:%d%s with method %s", host.ip, port.number, path, method)
+  stdnse.debug1("Probing %s:%d%s with method %s (HTTP transport)", host.ip, port.number, path, method)
   stdnse.debug2("Request payload: %s", payload)
 
   local response = http.post(host, port, path, options)
@@ -184,6 +261,107 @@ local function send_mcp_request(host, port, path, method, params, bearer_token)
   end
 
   return response
+end
+
+-- Send WebSocket request with JSON-RPC payload
+local function send_websocket_request(host, port, path, method, params, bearer_token)
+  stdnse.debug1("Using WebSocket transport for %s", path)
+
+  -- WebSocket upgrade and communication
+  local payload = create_jsonrpc_request(method, params)
+
+  -- Build WebSocket handshake
+  local handshake = string.format(
+    "GET %s HTTP/1.1\r\n" ..
+    "Host: %s:%d\r\n" ..
+    "Upgrade: websocket\r\n" ..
+    "Connection: Upgrade\r\n" ..
+    "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n" ..
+    "Sec-WebSocket-Version: 13\r\n",
+    path, host.ip, port.number
+  )
+
+  if bearer_token then
+    handshake = handshake .. string.format("Authorization: Bearer %s\r\n", bearer_token)
+  end
+
+  handshake = handshake .. "\r\n"
+
+  -- Attempt WebSocket connection
+  local socket = comm.tryssl(host, port, "", {timeout=5000})
+
+  if not socket then
+    stdnse.debug2("Failed to create socket for WebSocket connection")
+    return nil
+  end
+
+  -- Send handshake
+  local status, err = socket:send(handshake)
+  if not status then
+    stdnse.debug2("Failed to send WebSocket handshake: %s", err or "unknown")
+    socket:close()
+    return nil
+  end
+
+  -- Receive handshake response
+  local status, response_data = socket:receive()
+  if not status then
+    stdnse.debug2("Failed to receive WebSocket handshake response: %s", response_data or "unknown")
+    socket:close()
+    return nil
+  end
+
+  -- Check if upgrade was successful
+  if not response_data:match("101 Switching Protocols") then
+    stdnse.debug2("WebSocket upgrade failed: %s", response_data:sub(1, 200))
+    socket:close()
+    return nil
+  end
+
+  stdnse.debug2("WebSocket connection established")
+
+  -- Send JSON-RPC message as WebSocket frame
+  -- Simple text frame (opcode 0x1)
+  local frame = string.char(0x81) .. string.char(#payload) .. payload
+
+  status, err = socket:send(frame)
+  if not status then
+    stdnse.debug2("Failed to send WebSocket frame: %s", err or "unknown")
+    socket:close()
+    return nil
+  end
+
+  -- Receive WebSocket frame response
+  status, response_data = socket:receive()
+  socket:close()
+
+  if not status then
+    stdnse.debug2("Failed to receive WebSocket response: %s", response_data or "unknown")
+    return nil
+  end
+
+  -- Parse WebSocket frame (skip first 2 bytes for simple frames)
+  local json_response = response_data:sub(3)
+
+  -- Return in same format as HTTP response
+  return {
+    status = 200,
+    body = json_response,
+    header = {}
+  }
+end
+
+-- Send MCP request using appropriate transport
+local function send_mcp_request(host, port, path, method, params, bearer_token)
+  local transport = detect_transport_type(path)
+
+  if transport == "sse" then
+    return send_sse_request(host, port, path, method, params, bearer_token)
+  elseif transport == "websocket" then
+    return send_websocket_request(host, port, path, method, params, bearer_token)
+  else
+    return send_http_request(host, port, path, method, params, bearer_token)
+  end
 end
 
 -- Parse and validate JSON-RPC response
@@ -327,6 +505,7 @@ local function probe_path(host, port, path)
   local prompts_list = {}
   local initialized = false
   local bearer_token = nil  -- Store token if authentication succeeds
+  local detected_transport = detect_transport_type(path)  -- Detect transport type
 
   -- Step 1: Initialize the connection (MUST be first in MCP protocol)
   stdnse.debug1("Attempting to initialize MCP connection at %s", path)
@@ -515,6 +694,7 @@ local function probe_path(host, port, path)
   if mcp_found then
     return {
       path = path,
+      transport = detected_transport,  -- Include detected transport type
       methods = method_results,
       server_info = server_info,
       tools = tools_list,
@@ -544,14 +724,33 @@ action = function(host, port)
   local endpoints_found = {}
   local authenticated_paths = {}  -- Track paths that require authentication
 
-  -- Get custom paths from script args or use defaults
-  local paths_arg = stdnse.get_script_args("mcp-discovery.paths")
-  local paths = DEFAULT_PATHS
+  -- Start with default paths and add custom paths if provided
+  local paths = {}
 
+  -- Always use the comprehensive default paths
+  for _, path in ipairs(DEFAULT_PATHS) do
+    table.insert(paths, path)
+  end
+
+  -- Add custom paths from script args (if any)
+  local paths_arg = stdnse.get_script_args("mcp-discovery.paths")
   if paths_arg then
-    paths = {}
+    stdnse.debug1("Adding custom paths: %s", paths_arg)
     for path in string.gmatch(paths_arg, "[^,]+") do
-      table.insert(paths, path)
+      -- Trim whitespace
+      path = path:match("^%s*(.-)%s*$")
+      -- Only add if not already in list
+      local already_exists = false
+      for _, existing_path in ipairs(paths) do
+        if existing_path == path then
+          already_exists = true
+          break
+        end
+      end
+      if not already_exists then
+        table.insert(paths, path)
+        stdnse.debug1("Added custom path: %s", path)
+      end
     end
   end
 
@@ -584,6 +783,11 @@ action = function(host, port)
 
       endpoint_output.url = endpoint_url
       endpoint_output.protocol = string.upper(protocol)
+
+      -- Add transport type
+      if result.transport then
+        endpoint_output.transport = string.upper(result.transport)
+      end
 
       -- Add methods information in consistent order
       if next(result.methods) then

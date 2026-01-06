@@ -1,6 +1,6 @@
 # MCP Discovery NSE Script for Nmap
 
-An Nmap Scripting Engine (NSE) script that discovers Model Context Protocol (MCP) endpoints by probing HTTP and WebSocket services with JSON-RPC 2.0 requests.
+An Nmap Scripting Engine (NSE) script that discovers Model Context Protocol (MCP) endpoints by probing HTTP, SSE, and WebSocket services with JSON-RPC 2.0 requests.
 
 **Developed by [IntegSec](https://integsec.com)**
 
@@ -10,16 +10,18 @@ The Model Context Protocol (MCP) is an open protocol that enables AI assistants 
 
 ## Features
 
-- Discovers MCP endpoints on HTTP/HTTPS services
-- Tests common MCP paths automatically
-- Probes for standard MCP methods:
-  - `tools/list` - Enumerates available tools
-  - `resources/list` - Lists available resources
-  - `prompts/list` - Shows available prompts
-  - `initialize` - MCP initialization handshake
-- Extracts server information (name, version, protocol version)
-- Safe and non-intrusive scanning
-- Customizable paths and timeout settings
+- **Full Transport Support**: Discovers MCP endpoints using all three transport methods:
+  - **HTTP (Streamable HTTP)** - The 2025 standard transport
+  - **SSE (Server-Sent Events)** - Legacy transport (pre-2025)
+  - **WebSocket** - Real-time bidirectional communication
+- **Automatic Transport Detection**: Intelligently detects and uses the correct transport based on path
+- **Comprehensive Path Coverage**: Tests 27+ common MCP paths including gateways, proxies, and framework-specific endpoints
+- **Full MCP Protocol Support**: Properly implements MCP protocol flow (initialize → list methods)
+- **Authentication Support**: Detects Bearer token authentication and can optionally brute force with common credentials
+- **Detailed Enumeration**: Lists actual tools, resources, and prompts (not just counts)
+- **Server Fingerprinting**: Extracts server name, version, protocol version, and capabilities
+- **Safe by Default**: Non-intrusive scanning with opt-in brute force
+- **Customizable**: Custom paths, timeouts, and credential lists
 
 ## Installation
 
@@ -91,13 +93,15 @@ Scan hosts listed in a file:
 nmap -p 80,443,3000-3100 --script mcp-discovery -iL targets.txt
 ```
 
-### Custom Paths
+### Additional Custom Paths
 
-Specify custom paths to probe:
+Add additional paths to probe (the 27 default paths are always tested):
 
 ```bash
-nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.paths=/api/v1/mcp,/custom/endpoint <target>
+nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.paths=/api/v2/mcp,/custom/endpoint <target>
 ```
+
+**Note:** The script always tests all 27 default paths (including `/mcp`, `/sse`, `/ws`, etc.). This argument lets you add MORE paths on top of the defaults.
 
 ### Adjust Timeout
 
@@ -146,7 +150,7 @@ The script automatically tries:
 
 ## Output Examples
 
-### Successful MCP Discovery
+### Successful MCP Discovery (HTTP Transport)
 
 ```
 PORT     STATE SERVICE
@@ -156,11 +160,12 @@ PORT     STATE SERVICE
 |     [1]
 |       url: http://192.168.1.100:3000/mcp
 |       protocol: HTTP
+|       transport: HTTP
 |       methods:
+|         initialize: Initialized successfully
 |         tools/list: 3 tools available
 |         resources/list: 5 resources available
 |         prompts/list: 2 prompts available
-|         initialize: Initialized successfully
 |       server_info:
 |         name: example-mcp-server
 |         version: 1.0.0
@@ -180,7 +185,49 @@ PORT     STATE SERVICE
 |_        bug_analysis: Analyze bugs and suggest fixes
 ```
 
-### Multiple Endpoints Found
+### SSE Transport Discovery (Legacy Pre-2025)
+
+```
+PORT     STATE SERVICE
+3000/tcp open  ppp
+| mcp-discovery:
+|   endpoints:
+|     [1]
+|       url: http://192.168.1.100:3000/sse
+|       protocol: HTTP
+|       transport: SSE
+|       methods:
+|         initialize: Initialized successfully
+|         tools/list: 2 tools available
+|       server_info:
+|         name: legacy-mcp-server
+|         protocolVersion: 2024-10-01
+|       tools:
+|         search: Search for information
+|_        summarize: Summarize text content
+```
+
+### WebSocket Transport Discovery
+
+```
+PORT     STATE SERVICE
+3000/tcp open  ppp
+| mcp-discovery:
+|   endpoints:
+|     [1]
+|       url: http://192.168.1.100:3000/ws
+|       protocol: HTTP
+|       transport: WEBSOCKET
+|       methods:
+|         initialize: Initialized successfully
+|         tools/list: 1 tool available
+|       server_info:
+|         name: realtime-mcp
+|       tools:
+|_        stream_data: Stream real-time data
+```
+
+### Multiple Endpoints with Different Transports
 
 ```
 PORT     STATE SERVICE
@@ -190,7 +237,9 @@ PORT     STATE SERVICE
 |     [1]
 |       url: http://192.168.1.100:8080/mcp
 |       protocol: HTTP
+|       transport: HTTP
 |       methods:
+|         initialize: Initialized successfully
 |         tools/list: 10 tools available
 |         resources/list: 3 resources available
 |       server_info:
@@ -213,11 +262,12 @@ PORT     STATE SERVICE
 |         file:///etc/config: Configuration files
 |         file:///var/log: Log files
 |     [2]
-|       url: http://192.168.1.100:8080/api/mcp
+|       url: http://192.168.1.100:8080/sse
 |       protocol: HTTP
+|       transport: SSE
 |       methods:
-|         tools/list: 5 tools available
 |         initialize: Initialized successfully
+|         tools/list: 5 tools available
 |       tools:
 |         api_call: Make an API call
 |         parse_json: Parse JSON data
@@ -262,7 +312,7 @@ PORT     STATE SERVICE
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `mcp-discovery.paths` | Comma-separated list of paths to probe | 27 comprehensive paths (see below) |
+| `mcp-discovery.paths` | Comma-separated list of ADDITIONAL paths to probe (default 27 paths always included) | None (uses 27 default paths) |
 | `mcp-discovery.timeout` | Timeout for HTTP requests in milliseconds | `5000` |
 | `mcp-discovery.useragent` | User-Agent header to use | `Nmap NSE` |
 | `mcp-discovery.bruteforce` | Enable brute force authentication attempts | `false` |
@@ -272,6 +322,8 @@ PORT     STATE SERVICE
 ## Comprehensive MCP Path Coverage
 
 The script automatically probes **27 common MCP endpoint paths** based on research of popular MCP servers, gateways, and frameworks (2025):
+
+**⚠️ IMPORTANT:** These paths are **ALWAYS tested by default** - you don't need to specify them! The `mcp-discovery.paths` argument is only for adding ADDITIONAL custom paths.
 
 ### Standard MCP Paths
 - `/` - Root path (common for simple servers)
@@ -309,7 +361,54 @@ The script automatically probes **27 common MCP endpoint paths** based on resear
 ### Transport-Specific Paths
 - `/http` - HTTP transport explicit path
 - `/stream` - Generic streaming path
-- `/ws` - WebSocket path (future support)
+- `/ws` - WebSocket path
+
+## MCP Transport Support
+
+The script supports all three official MCP transport methods as of the 2025 specification:
+
+### HTTP (Streamable HTTP) Transport
+**Status:** ✅ Fully Supported
+
+The modern standard transport for MCP (2025+). Uses HTTP POST with JSON-RPC 2.0 payloads.
+
+- **Detection:** Automatically used for standard paths like `/mcp`, `/api/mcp`, etc.
+- **Protocol:** HTTP POST with `Content-Type: application/json`
+- **Authentication:** Bearer token support
+- **Implementation:** Full support including proper initialize → list methods flow
+
+### SSE (Server-Sent Events) Transport
+**Status:** ✅ Fully Supported
+
+Legacy transport method used before the 2025 specification update.
+
+- **Detection:** Automatically detected for paths containing `/sse`, `/messages`, `/stream`
+- **Protocol:** GET request to establish SSE connection, POST to `/messages` for requests
+- **Headers:** Uses `Accept: text/event-stream`
+- **Implementation:** Properly handles SSE dual-endpoint model (connection + message endpoint)
+
+### WebSocket Transport
+**Status:** ✅ Fully Supported
+
+Real-time bidirectional communication transport.
+
+- **Detection:** Automatically detected for paths containing `/ws`, `/websocket`
+- **Protocol:** WebSocket upgrade handshake followed by framed JSON-RPC messages
+- **Headers:** Standard WebSocket upgrade headers (`Upgrade: websocket`, `Connection: Upgrade`)
+- **Authentication:** Bearer token support in handshake
+- **Implementation:** Full WebSocket handshake and frame parsing
+
+### Transport Auto-Detection
+
+The script intelligently detects the correct transport based on the path:
+
+```lua
+/sse, /messages, /stream → SSE Transport
+/ws, /websocket → WebSocket Transport
+All other paths → HTTP (Streamable HTTP) Transport
+```
+
+This means you don't need to specify the transport - the script will automatically use the correct protocol for each path!
 
 ## Popular MCP Servers Detected
 
