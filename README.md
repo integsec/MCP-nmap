@@ -61,20 +61,22 @@ nmap --script ./mcp-discovery.nse <target>
 
 ## Usage
 
+**⚠️ IMPORTANT:** This script requires service detection (`-sV`) to work properly. It uses Nmap's service detection to identify HTTP/HTTPS services on any port, which means it will find MCP endpoints regardless of port number.
+
 ### Basic Scan
 
-Scan a single host on common web ports:
+Scan a single host on common web ports with service detection:
 
 ```bash
-nmap -p 80,443,3000-3100 --script mcp-discovery <target>
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery <target>
 ```
 
 ### Scan All Ports
 
-Scan all ports for MCP endpoints:
+Scan all ports for MCP endpoints (this will find HTTP services on any port):
 
 ```bash
-nmap -p- --script mcp-discovery <target>
+nmap -p- -sV --script mcp-discovery <target>
 ```
 
 ### Scan Multiple Hosts
@@ -82,7 +84,7 @@ nmap -p- --script mcp-discovery <target>
 Scan a network range:
 
 ```bash
-nmap -p 80,443,3000-3100 --script mcp-discovery 192.168.1.0/24
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery 192.168.1.0/24
 ```
 
 ### Scan from File
@@ -90,7 +92,7 @@ nmap -p 80,443,3000-3100 --script mcp-discovery 192.168.1.0/24
 Scan hosts listed in a file:
 
 ```bash
-nmap -p 80,443,3000-3100 --script mcp-discovery -iL targets.txt
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery -iL targets.txt
 ```
 
 ### Additional Custom Paths
@@ -98,7 +100,7 @@ nmap -p 80,443,3000-3100 --script mcp-discovery -iL targets.txt
 Add additional paths to probe (the 27 default paths are always tested):
 
 ```bash
-nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.paths=/api/v2/mcp,/custom/endpoint <target>
+nmap -p 80,443 -sV --script mcp-discovery --script-args mcp-discovery.paths=/api/v2/mcp,/custom/endpoint <target>
 ```
 
 **Note:** The script always tests all 27 default paths (including `/mcp`, `/sse`, `/ws`, etc.). This argument lets you add MORE paths on top of the defaults.
@@ -108,7 +110,7 @@ nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.paths=/api/v2/
 Set a custom timeout (default is 5000ms):
 
 ```bash
-nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.timeout=10000 <target>
+nmap -p 80,443 -sV --script mcp-discovery --script-args mcp-discovery.timeout=10000 <target>
 ```
 
 ### Verbose Output
@@ -116,7 +118,7 @@ nmap -p 80,443 --script mcp-discovery --script-args mcp-discovery.timeout=10000 
 Get more detailed information:
 
 ```bash
-nmap -p 80,443 --script mcp-discovery -v <target>
+nmap -p 80,443 -sV --script mcp-discovery -v <target>
 ```
 
 ### Debug Mode
@@ -124,7 +126,7 @@ nmap -p 80,443 --script mcp-discovery -v <target>
 Enable debug output for troubleshooting:
 
 ```bash
-nmap -p 80,443 --script mcp-discovery -d <target>
+nmap -p 80,443 -sV --script mcp-discovery -d <target>
 ```
 
 ### Brute Force Authentication
@@ -132,13 +134,13 @@ nmap -p 80,443 --script mcp-discovery -d <target>
 When encountering authenticated MCP endpoints (like MCP Gateway), enable brute force to attempt common tokens:
 
 ```bash
-nmap -p 8811 --script mcp-discovery --script-args mcp-discovery.bruteforce=true <target>
+nmap -p 8811 -sV --script mcp-discovery --script-args mcp-discovery.bruteforce=true <target>
 ```
 
 Use custom password database:
 
 ```bash
-nmap -p 8811 --script mcp-discovery --script-args mcp-discovery.bruteforce=true,mcp-discovery.passdb=/path/to/tokens.txt <target>
+nmap -p 8811 -sV --script mcp-discovery --script-args mcp-discovery.bruteforce=true,mcp-discovery.passdb=/path/to/tokens.txt <target>
 ```
 
 The script automatically tries:
@@ -437,46 +439,40 @@ This script can detect MCP endpoints from popular servers and frameworks:
 
 ## Integration with Nmap
 
-### Combine with Service Detection
-
-```bash
-nmap -sV -p- --script mcp-discovery <target>
-```
-
 ### Save Results to File
 
 ```bash
 # XML format
-nmap -p 80,443,3000-3100 --script mcp-discovery -oX mcp-scan.xml <target>
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery -oX mcp-scan.xml <target>
 
 # Normal format
-nmap -p 80,443,3000-3100 --script mcp-discovery -oN mcp-scan.txt <target>
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery -oN mcp-scan.txt <target>
 
 # All formats
-nmap -p 80,443,3000-3100 --script mcp-discovery -oA mcp-scan <target>
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery -oA mcp-scan <target>
 ```
 
 ### Combine with Other Scripts
 
 ```bash
-nmap -p 80,443 --script http-enum,mcp-discovery <target>
+nmap -p 80,443 -sV --script http-enum,mcp-discovery <target>
 ```
 
 ## Performance Tips
 
 1. **Target Specific Ports**: Instead of scanning all ports, target common web service ports to speed up scans:
    ```bash
-   nmap -p 80,443,3000,3001,8080,8443 --script mcp-discovery <target>
+   nmap -p 80,443,3000,3001,8080,8443 -sV --script mcp-discovery <target>
    ```
 
-2. **Reduce Paths**: If you know the specific MCP path, specify it to reduce scan time:
+2. **Use Lighter Service Detection**: For faster scans, use lighter service detection:
    ```bash
-   nmap --script mcp-discovery --script-args mcp-discovery.paths=/mcp <target>
+   nmap -p- -sV --version-intensity 0 --script mcp-discovery <target>
    ```
 
 3. **Parallel Scanning**: Scan multiple hosts in parallel:
    ```bash
-   nmap -p 80,443,3000 --script mcp-discovery --min-hostgroup 10 192.168.1.0/24
+   nmap -p 80,443,3000 -sV --script mcp-discovery --min-hostgroup 10 192.168.1.0/24
    ```
 
 ## Security Considerations
@@ -512,10 +508,13 @@ If you get "NSE: failed to initialize the script engine", ensure:
 ### No Output
 
 If the script produces no output:
-1. Verify the target host is running an HTTP service: `nmap -sV -p <port> <target>`
-2. Enable debug mode: `nmap -d --script mcp-discovery <target>`
-3. Check if the MCP server is on a non-standard path (use custom paths argument)
-4. Ensure the MCP server is actually running and accessible
+1. **Make sure you're using `-sV`**: The script requires service detection to work
+2. Verify the target host is running an HTTP service: `nmap -sV -p <port> <target>`
+3. Enable debug mode: `nmap -sV -d --script mcp-discovery <target>`
+4. Check if the MCP server is on a non-standard path (use custom paths argument)
+5. Ensure the MCP server is actually running and accessible
+
+**Common mistake:** Running without `-sV` flag. This script uses service detection to identify HTTP services on any port, so `-sV` is required!
 
 ### JSON Parse Errors
 
@@ -531,7 +530,7 @@ If you see JSON parsing errors in debug mode:
 If you have an MCP server running locally on port 3000:
 
 ```bash
-nmap -p 3000 --script mcp-discovery localhost
+nmap -p 3000 -sV --script mcp-discovery localhost
 ```
 
 ### Test Syntax
@@ -547,7 +546,7 @@ nmap --script-help mcp-discovery
 Test without actually scanning (validate script loads):
 
 ```bash
-nmap --script mcp-discovery --script-trace localhost -p 80 -Pn
+nmap -sV --script mcp-discovery --script-trace localhost -p 80 -Pn
 ```
 
 ## Example Workflow
@@ -556,13 +555,13 @@ Complete MCP endpoint discovery workflow:
 
 ```bash
 # 1. Quick scan on common ports
-nmap -p 80,443,3000-3100 --script mcp-discovery 192.168.1.0/24 -oN quick-scan.txt
+nmap -p 80,443,3000-3100 -sV --script mcp-discovery 192.168.1.0/24 -oN quick-scan.txt
 
 # 2. Deep scan on hosts that responded
-nmap -p- --script mcp-discovery 192.168.1.50 -oN deep-scan.txt
+nmap -p- -sV --script mcp-discovery 192.168.1.50 -oN deep-scan.txt
 
 # 3. Detailed investigation with verbose output
-nmap -p 3000 --script mcp-discovery -sV -v 192.168.1.50
+nmap -p 3000 -sV --script mcp-discovery -v 192.168.1.50
 ```
 
 ## Contributing

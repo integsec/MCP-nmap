@@ -157,9 +157,11 @@ local DEFAULT_PATHS = {
 
 -- Rule to determine if script should run
 portrule = function(host, port)
-  -- Run on HTTP, HTTPS, and common web ports including MCP Gateway defaults
+  -- Run on any port where service detection identified HTTP/HTTPS or WebSocket
+  -- This works regardless of port number and relies on Nmap's service detection
+  -- Note: WebSocket servers typically also respond to HTTP, but we include it for completeness
   return shortport.http(host, port) or
-         shortport.portnumber({80, 443, 3000, 3001, 8000, 8080, 8443, 8811}, "tcp")(host, port)
+         (port.service and port.service:match("websocket"))
 end
 
 -- Create a JSON-RPC 2.0 request
